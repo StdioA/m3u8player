@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple HLS Player with Auto Play Handling</title>
+    <style>
+        /* Add this style section */
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        #video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* This will cover the entire screen, potentially cropping the video */
+            /* If you prefer to see the entire video, use 'contain' instead of 'cover' */
+            /* object-fit: contain; */
+        }
+    </style>
+    <script src="https://cdn.bootcdn.net/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+</head>
+<body>
+    <video id="video" controls></video>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var video = document.getElementById('video');
+            var streamUrl = '/index.m3u8'; // Replace with your m3u8 stream URL
+        
+            if (Hls.isSupported()) {
+                var hls = new Hls({
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 600,
+                    enableWorker: true,
+                    highBufferWatchdogPeriod: 2,
+                    fragLoadingMaxRetry: 5,
+                    fragLoadingRetryDelay: 1000,
+                    fragLoadingMaxRetryTimeout: 64000,
+                    startFragPrefetch: true,
+                    abrEwmaFastLive: 3,
+                    abrEwmaSlowLive: 9,
+                    liveSyncDurationCount: 3,
+                    liveMaxLatencyDurationCount: 10,
+                    liveDurationInfinity: true,
+                    startPosition: 0,
+                    debug: true,
+                });
+        
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+        
+                function forcePlay() {
+                    video.play().catch(function(error) {
+                        console.log("Play attempt failed:", error);
+                        setTimeout(forcePlay, 1000);
+                    });
+                }
+        
+                hls.on(Hls.Events.MANIFEST_PARSED, forcePlay);
+                hls.on(Hls.Events.FRAG_LOADED, forcePlay);
+        
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        switch(data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.log("fatal network error encountered, try to recover");
+                            hls.startLoad();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log("fatal media error encountered, try to recover");
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            hls.destroy();
+                            break;
+                        }
+                    }
+                });
+        
+                hls.on(Hls.Events.STREAM_STATE_TRANSITION, function(event, data) {
+                    if (data.nextState === 'STOPPED') {
+                        console.log("Stream stopped, attempting to resume");
+                        hls.startLoad();
+                        video.play();
+                    }
+                });
+            }
+            else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play();
+                });
+            }
+        });
+        </script>
+</body>
+</html>
