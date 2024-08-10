@@ -47,7 +47,7 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			refURL.Path = strings.TrimLeft(refURL.Path, "/")
 		}
 		var urlBase = *m3u8URL
-		if baseURL == "" {
+		if baseURL != "" {
 			urlBase = baseURL
 		}
 		urlObj, _ := url.Parse(urlBase)
