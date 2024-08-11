@@ -1,45 +1,40 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 )
 
-type ProxyHandler struct{}
+type ProxyHandler struct {
+	redirectBase string
+}
 
 var (
-	proxyHandler = new(ProxyHandler)
 	listen       = flag.String("listen", "localhost:6789", "HTTP Server listen address")
 	m3u8URL      = flag.String("m3u8", "", "M3U8 URL")
 	debug        = flag.Bool("debug", false, "Enable debug mode")
-	baseURL      string
+	proxyHandler = new(ProxyHandler)
 )
 
-//go:embed index.html
-var indexHTML []byte
+//go:embed static
+var staticFolder embed.FS
 
-//go:embed hls.min.js
-var hlsjs []byte
-
-func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (handler *ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		proxyURL string
 		code     int
 		err      error
 	)
-	switch req.URL.String() {
-	case "/":
-		w.Write(indexHTML)
-		return
-	case "/index.m3u8":
+	if req.URL.Path == "/index.m3u8" {
 		proxyURL = *m3u8URL
-	default:
+	} else {
 		// Build absolute path base on baseURL & m3u8URL
 		// It may starts with "/", or not
 		// 一个非常离谱的判断方式：
@@ -50,8 +45,8 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			refURL.Path = strings.TrimLeft(refURL.Path, "/")
 		}
 		var urlBase = *m3u8URL
-		if baseURL != "" {
-			urlBase = baseURL
+		if handler.redirectBase != "" {
+			urlBase = handler.redirectBase
 		}
 		urlObj, _ := url.Parse(urlBase)
 		urlObj = urlObj.ResolveReference(refURL)
@@ -87,8 +82,8 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	code = res.StatusCode
 	// 缓存 baseURL，避免后续的重复重定向
-	if baseURL == "" {
-		baseURL = res.Request.URL.String()
+	if handler.redirectBase == "" {
+		handler.redirectBase = res.Request.URL.String()
 	}
 
 	// Copy response
@@ -100,18 +95,28 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(res.StatusCode)
 	_, err = io.Copy(w, res.Body)
 }
-
-func serveStatic(content []byte) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Write(content)
+func serveStatic(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		r.URL.Path = "/index.html"
 	}
+	filePath := path.Join("static", r.URL.Path) // strings.TrimPrefix(r.URL.Path, "/")
+	// Read from static FS
+	content, err := staticFolder.ReadFile(filePath)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, err.Error())
+		return
+	}
+	w.Write(content)
 }
 
 func main() {
 	flag.Parse()
+	http.HandleFunc("/{$}", serveStatic)
+	http.HandleFunc("/index.html", serveStatic)
+	http.HandleFunc("/hls.min.js", serveStatic)
+	http.HandleFunc("/", proxyHandler.ServeHTTP)
+
 	fmt.Println("Server is listening at", *listen)
-	http.HandleFunc("/index.html", serveStatic(indexHTML))
-	http.HandleFunc("/hls.min.js", serveStatic(hlsjs))
-	http.HandleFunc("/*", proxyHandler.ServeHTTP)
 	http.ListenAndServe(*listen, nil)
 }
