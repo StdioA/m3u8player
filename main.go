@@ -24,6 +24,9 @@ var (
 //go:embed index.html
 var indexHTML []byte
 
+//go:embed hls.min.js
+var hlsjs []byte
+
 func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		proxyURL string
@@ -31,11 +34,11 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		err      error
 	)
 	switch req.URL.String() {
-	case "/index.m3u8":
-		proxyURL = *m3u8URL
-	case "/", "/index.html":
+	case "/":
 		w.Write(indexHTML)
 		return
+	case "/index.m3u8":
+		proxyURL = *m3u8URL
 	default:
 		// Build absolute path base on baseURL & m3u8URL
 		// It may starts with "/", or not
@@ -98,9 +101,17 @@ func (*ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_, err = io.Copy(w, res.Body)
 }
 
+func serveStatic(content []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}
+}
+
 func main() {
 	flag.Parse()
 	fmt.Println("Server is listening at", *listen)
+	http.HandleFunc("/index.html", serveStatic(indexHTML))
+	http.HandleFunc("/hls.min.js", serveStatic(hlsjs))
 	http.HandleFunc("/*", proxyHandler.ServeHTTP)
 	http.ListenAndServe(*listen, nil)
 }
