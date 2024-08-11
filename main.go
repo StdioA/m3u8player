@@ -80,9 +80,10 @@ func (handler *ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 		_, _ = io.WriteString(w, err.Error())
 		return
 	}
+	defer res.Body.Close()
 	code = res.StatusCode
 	// 缓存 baseURL，避免后续的重复重定向
-	if handler.redirectBase == "" {
+	if res.Header.Get("Content-Type") == "application/vnd.apple.mpegurl" {
 		handler.redirectBase = res.Request.URL.String()
 	}
 
@@ -95,6 +96,7 @@ func (handler *ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	w.WriteHeader(res.StatusCode)
 	_, err = io.Copy(w, res.Body)
 }
+
 func serveStatic(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
 		r.URL.Path = "/index.html"
